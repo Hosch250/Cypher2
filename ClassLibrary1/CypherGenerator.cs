@@ -23,6 +23,31 @@ public class CypherAttribute : System.Attribute
     {
         Statement = statement;
     }
+}
+
+public class CypherLabelAttribute : System.Attribute
+{
+    public string Label { get; }
+    public CypherLabelAttribute(string label)
+    {
+        Label = label;
+    }
+}";
+
+        private const string Repository = @"// Auto-generated code
+namespace CypherGenerator;
+
+public interface IRepository<T>
+{
+    T Get<TId>(TId id);
+    List<T> GetWhere(Expression<Func<T, bool>> whereFilter, int skip, int limit);
+    T Create(T record);
+    T Merge(Expression<Func<T, bool>> filter, T onCreate);
+    T Update(T record);
+    void Delete<TId>(TId id);
+    void DeleteWhere(Expression<Func<T, bool>> whereFilter);
+    int Count(Expression<Func<T, bool>> filter);
+    TRelationship Connect<TId, TRelationship>(TId fromId, TId toId, TRelationship relationshipRecord);
 }";
 
         public void Execute(GeneratorExecutionContext context)
