@@ -2,6 +2,8 @@
 {
     using Neo4j.Driver;
     using CypherGenerator;
+    using System.Linq.Expressions;
+    using static Cypher2.PersonToMovieRelationships;
 
     public partial class Program
     {
@@ -19,88 +21,338 @@ public record {0}({1})
 
         static async Task Main()
         {
-            var typeMap = new Dictionary<string, string>()
-            {
-                ["Boolean"] = "bool",
-                ["Long"] = "long",
-                ["Double"] = "double",
-                ["String"] = "string",
-                ["DateTime"] = "DateTime",
-                ["LocalDateTime"] = "DateTime",
-                ["Date"] = "DateOnly",
-                ["LocalDate"] = "DateOnly",
-                ["Time"] = "TimeOnly",
-                ["LocalTime"] = "TimeOnly",
-                ["Duration"] = "TimeSpan",
-                ["BooleanArray"] = "List<bool>",
-                ["LongArray"] = "List<long>",
-                ["DoubleArray"] = "List<double>",
-                ["StringArray"] = "List<string>",
-                ["DateTimeArray"] = "List<DateTime>",
-                ["DateArray"] = "List<DateOnly>",
-                ["LocalDateArray"] = "List<DateOnly>",
-                ["TimeArray"] = "List<TimeOnly>",
-                ["LocalTimeArray"] = "List<TimeOnly>",
-                ["DurationArray"] = "List<TimeSpan>",
-            };
+            //var typeMap = new Dictionary<string, string>()
+            //{
+            //    ["Boolean"] = "bool",
+            //    ["Long"] = "long",
+            //    ["Double"] = "double",
+            //    ["String"] = "string",
+            //    ["DateTime"] = "DateTime",
+            //    ["LocalDateTime"] = "DateTime",
+            //    ["Date"] = "DateOnly",
+            //    ["LocalDate"] = "DateOnly",
+            //    ["Time"] = "TimeOnly",
+            //    ["LocalTime"] = "TimeOnly",
+            //    ["Duration"] = "TimeSpan",
+            //    ["BooleanArray"] = "List<bool>",
+            //    ["LongArray"] = "List<long>",
+            //    ["DoubleArray"] = "List<double>",
+            //    ["StringArray"] = "List<string>",
+            //    ["DateTimeArray"] = "List<DateTime>",
+            //    ["DateArray"] = "List<DateOnly>",
+            //    ["LocalDateArray"] = "List<DateOnly>",
+            //    ["TimeArray"] = "List<TimeOnly>",
+            //    ["LocalTimeArray"] = "List<TimeOnly>",
+            //    ["DurationArray"] = "List<TimeSpan>",
+            //};
 
-            var driver = GraphDatabase.Driver("neo4j://localhost:7687", AuthTokens.Basic("neo4j", "test"));
-            var session = driver.AsyncSession();
+            //var driver = GraphDatabase.Driver("neo4j://localhost:7687", AuthTokens.Basic("neo4j", "test"));
+            //var session = driver.AsyncSession();
 
-            var nodeResults = await session.RunAsync("CALL db.schema.nodeTypeProperties()");
-            var nodes = await nodeResults.ToListAsync(f => new
-            {
-                nodeType = f.Values["nodeType"].As<string>(),
-                propertyName = f.Values["propertyName"].As<string>(),
-                propertyTypes = f.Values["propertyTypes"].As<List<string>>(),
-                mandatory = f.Values["mandatory"].As<bool>(),
-            });
+            //var nodeResults = await session.RunAsync("CALL db.schema.nodeTypeProperties()");
+            //var nodes = await nodeResults.ToListAsync(f => new
+            //{
+            //    nodeType = f.Values["nodeType"].As<string>(),
+            //    propertyName = f.Values["propertyName"].As<string>(),
+            //    propertyTypes = f.Values["propertyTypes"].As<List<string>>(),
+            //    mandatory = f.Values["mandatory"].As<bool>(),
+            //});
 
-            var relResults = await session.RunAsync("CALL db.schema.relTypeProperties()");
-            var relationships = await relResults.ToListAsync(f => new {
-                nodeType = f.Values["relType"].As<string>(),
-                propertyName = f.Values["propertyName"].As<string>(),
-                propertyTypes = f.Values["propertyTypes"].As<List<string>>(),
-                mandatory = f.Values["mandatory"].As<bool>(),
-            });
+            //var relResults = await session.RunAsync("CALL db.schema.relTypeProperties()");
+            //var relationships = await relResults.ToListAsync(f => new {
+            //    nodeType = f.Values["relType"].As<string>(),
+            //    propertyName = f.Values["propertyName"].As<string>(),
+            //    propertyTypes = f.Values["propertyTypes"].As<List<string>>(),
+            //    mandatory = f.Values["mandatory"].As<bool>(),
+            //});
 
-            var relRecords = relationships.Select(s => (s.nodeType, arg: s.propertyTypes is null ? "" : $"{typeMap[s.propertyTypes[0]]}{(s.mandatory ? "" : "?")} {s.propertyName}"))
-                .GroupBy(g => g.nodeType)
-                .Select(s => $"public record {s.Key[2..^1]}({string.Join(", ", s.Select(x => x.arg))});")
-                .ToList();
+            //var relRecords = relationships.Select(s => (s.nodeType, arg: s.propertyTypes is null ? "" : $"{typeMap[s.propertyTypes[0]]}{(s.mandatory ? "" : "?")} {s.propertyName}"))
+            //    .GroupBy(g => g.nodeType)
+            //    .Select(s => $"public record {s.Key[2..^1]}({string.Join(", ", s.Select(x => x.arg))});")
+            //    .ToList();
 
-            var visResults = await session.RunAsync("CALL db.schema.visualization()");
-            var vis = await visResults.SingleAsync(f => new {
-                nodes = f.Values["nodes"].As<List<INode>>(),
-                relations = f.Values["relationships"].As<List<IRelationship>>()
-            });
+            //var visResults = await session.RunAsync("CALL db.schema.visualization()");
+            //var vis = await visResults.SingleAsync(f => new {
+            //    nodes = f.Values["nodes"].As<List<INode>>(),
+            //    relations = f.Values["relationships"].As<List<IRelationship>>()
+            //});
 
-            var nodeRecords = nodes
-            .GroupBy(g => g.nodeType)
-            .Select(s => {
-                var node = vis.nodes.Single(n => n.Labels.Contains(s.Key[2..^1]));
-                var connections = vis.relations.Where(w => w.StartNodeId == node.Id || w.EndNodeId == node.Id).ToList();
+            //var nodeRecords = nodes
+            //.GroupBy(g => g.nodeType)
+            //.Select(s => {
+            //    var node = vis.nodes.Single(n => n.Labels.Contains(s.Key[2..^1]));
+            //    var connections = vis.relations.Where(w => w.StartNodeId == node.Id || w.EndNodeId == node.Id).ToList();
 
-                var relProperties = connections.Select(c => {
-                    var direction = c.StartNodeId == node.Id ? "FROM" : "TO";
-                    var connectedTo = c.StartNodeId == node.Id ? c.EndNodeId : c.StartNodeId;
+            //    var relProperties = connections.Select(c => {
+            //        var direction = c.StartNodeId == node.Id ? "FROM" : "TO";
+            //        var connectedTo = c.StartNodeId == node.Id ? c.EndNodeId : c.StartNodeId;
 
-                    var connectedToNode = vis.nodes.First(f => f.Id == connectedTo).Labels[0];
-                    var relationship = relationships.First(f => f.nodeType[2..^1] == c.Type);
+            //        var connectedToNode = vis.nodes.First(f => f.Id == connectedTo).Labels[0];
+            //        var relationship = relationships.First(f => f.nodeType[2..^1] == c.Type);
 
-                    var type = relationship.propertyTypes is null ? $"List<{connectedToNode}>" : $"List<({relationship.nodeType[2..^1]}, {connectedToNode})>";
+            //        var type = relationship.propertyTypes is null ? $"List<{connectedToNode}>" : $"List<({relationship.nodeType[2..^1]}, {connectedToNode})>";
 
-                    return string.Format(RelationshipPropertyTemplate, c.Type, "Direction." + direction, type, c.Type);
-                });
+            //        return string.Format(RelationshipPropertyTemplate, c.Type, "Direction." + direction, type, c.Type);
+            //    });
 
-                var relProps = string.Join(Environment.NewLine + Environment.NewLine, relProperties);
+            //    var relProps = string.Join(Environment.NewLine + Environment.NewLine, relProperties);
 
-                var recordArgs = s.Select(n => $"{typeMap[n.propertyTypes[0]]}{(n.mandatory ? "" : "?")} {n.propertyName}");
+            //    var recordArgs = s.Select(n => $"{typeMap[n.propertyTypes[0]]}{(n.mandatory ? "" : "?")} {n.propertyName}");
 
-                return string.Format(RecordTemplate, node.Labels[0], string.Join(", ", recordArgs), relProps);
-            }).ToList();
+            //    return string.Format(RecordTemplate, node.Labels[0], string.Join(", ", recordArgs), relProps);
+            //}).ToList();
         }
         
+    }
+    public interface IRepository<T>
+    {
+        ValueTask<T?> Get<TId>(TId id);
+        ValueTask<List<T>> GetWhere(Expression<Func<T, bool>> whereFilter, int? skip, int? limit);
+        ValueTask<T> Create(T record);
+        ValueTask<T> Merge(T record);
+        ValueTask<T?> Update(T record);
+        ValueTask Delete<TId>(TId id);
+        ValueTask DeleteWhere(Expression<Func<T, bool>> whereFilter);
+        ValueTask<long> Count(Expression<Func<T, bool>> filter);
+        ValueTask<TRelationship> Connect<TId, TRelationship>(TId fromId, TId toId, TRelationship relationshipRecord)
+            where TId : notnull
+            where TRelationship : struct, ICypherNode;
+    }
+
+    public class PersonRepository : IRepository<Person>
+    {
+        private readonly Neo4jClient.GraphClient driver;
+
+        public PersonRepository(Neo4jClient.GraphClient driver)
+        {
+            this.driver = driver;
+        }
+
+        public async ValueTask<Person?> Get<TId>(TId id)
+        {
+            var query = driver.Cypher
+                .WithParams(new Dictionary<string, TId>() { ["nodeId"] = id })
+                .Match("(n:Person)")
+                .Where("ID(n) = $nodeId")
+                .Return(n => new Person(
+                    n.Node<INode>().Data.Properties["born"].As<long?>(),
+                    n.Node<INode>().Data.Properties["name"].As<string>()) {
+                        Id = n.Id()
+                    });
+
+            return (await query.ResultsAsync).FirstOrDefault();
+
+            // todo: create Id attribute to put on property and look up by that property's name if the attribute is set
+            //       otherwise, default to ID(n) lookup
+        }
+
+        public async ValueTask<List<Person>> GetWhere(Expression<Func<Person, bool>> whereFilter, int? skip, int? limit)
+        {
+            var query = driver.Cypher
+                .Match("(n:Person)")
+                .Where(whereFilter)
+                .Skip(skip)
+                .Limit(limit)
+                .Return(n => new Person(
+                    n.Node<INode>().Data.Properties["born"].As<long?>(),
+                    n.Node<INode>().Data.Properties["name"].As<string>()) {
+                        Id = n.Id()
+                    });
+
+            return (await query.ResultsAsync).ToList();
+        }
+
+        public async ValueTask<Person> Create(Person record)
+        {
+            var query = driver.Cypher
+                .WithParams(new Dictionary<string, Person>() { ["node"] = record })
+                .Create("(n:Person { born = $node.born, name = $node.name })")
+                .Return(n => new Person(
+                    n.Node<INode>().Data.Properties["born"].As<long?>(),
+                    n.Node<INode>().Data.Properties["name"].As<string>()) {
+                        Id = n.Id()
+                    });
+
+            return (await query.ResultsAsync).First();
+        }
+
+        public async ValueTask<Person> Merge(Person record)
+        {
+            var query = driver.Cypher
+                .WithParams(new Dictionary<string, Person>() { ["node"] = record })
+                .Merge("(n:Person { born = $node.born, name = $node.name })")
+                .Return(n => new Person(
+                    n.Node<INode>().Data.Properties["born"].As<long?>(),
+                    n.Node<INode>().Data.Properties["name"].As<string>())
+                {
+                    Id = n.Id()
+                });
+
+            return (await query.ResultsAsync).First();
+        }
+
+        public async ValueTask<Person?> Update(Person record)
+        {
+            var query = driver.Cypher
+                .WithParams(new Dictionary<string, Person>() { ["node"] = record })
+                .Match("(n:Person)")
+                .Where("ID(n) = $node.Id")
+                .Set("n.born = $node.Born")
+                .Set("n.name = $node.Name")
+                .Return(n => new Person(
+                    n.Node<INode>().Data.Properties["born"].As<long?>(),
+                    n.Node<INode>().Data.Properties["name"].As<string>())
+                {
+                    Id = n.Id()
+                });
+
+            return (await query.ResultsAsync).FirstOrDefault();
+        }
+
+        public async ValueTask Delete<TId>(TId id)
+        {
+            var query = driver.Cypher
+                .WithParams(new Dictionary<string, TId>() { ["nodeId"] = id })
+                .Match("(n:Person)")
+                .Where("ID(n) = $nodeId")
+                .DetachDelete("n");
+
+            await query.ExecuteWithoutResultsAsync();
+
+            // todo: create Id attribute to put on property and look up by that property's name if the attribute is set
+            //       otherwise, default to ID(n) lookup
+        }
+
+        public async ValueTask DeleteWhere(Expression<Func<Person, bool>> whereFilter)
+        {
+            var query = driver.Cypher
+                .Match("(n:Person)")
+                .Where(whereFilter)
+                .DetachDelete("n");
+
+            await query.ExecuteWithoutResultsAsync();
+        }
+
+        public async ValueTask<long> Count(Expression<Func<Person, bool>> filter)
+        {
+            var query = driver.Cypher
+                .Match("(n:Person)")
+                .Where(filter)
+                .Return(n => n.Count());
+
+            return (await query.ResultsAsync).First();
+        }
+
+        public async ValueTask<TRelationship> Connect<TId, TRelationship>(TId fromId, TId toId, TRelationship relationshipRecord)
+            where TId : notnull
+            where TRelationship : struct, ICypherNode
+        {
+            var query = driver.Cypher
+                .WithParams(new Dictionary<string, object>()
+                    {
+                        ["fromId"] = fromId,
+                        ["toId"] = toId,
+                        ["relationship"] = relationshipRecord,
+                        ["relationshipLabel"] = typeof(TRelationship).Name
+                    })
+                .Match("(from:Person)")
+                .Match("(to)")
+                .Where("ID(from) = $fromId AND ID(to) = $toId")
+                .Create("(from)-[rel:$relationshipLabel]->(to)")
+                .Return(rel => rel.Id());
+
+            var id = (await query.ResultsAsync).First();
+            return relationshipRecord with { Id = id };
+
+            // todo: figure out parameters for relationship node
+            // todo: figure out returning relationship node
+        }
+    }
+
+    public interface ICypherNode
+    {
+        public long Id { get; set; }
+    }
+
+    [CypherLabel("Person")]
+    public record Person(long? born, string name) : ICypherNode
+    {
+        public long Id { get; set; }
+
+        [CypherRelationship("ACTED_IN", Direction.FROM)]
+        public List<(ACTED_IN, Movie)> ACTED_IN { get; } = new();
+
+        [CypherRelationship("REVIEWED", Direction.FROM)]
+        public List<(REVIEWED, Movie)> REVIEWED { get; } = new();
+
+        [CypherRelationship("PRODUCED", Direction.FROM)]
+        public List<Movie> PRODUCED { get; } = new();
+
+        [CypherRelationship("WROTE", Direction.FROM)]
+        public List<Movie> WROTE { get; } = new();
+
+        [CypherRelationship("FOLLOWS", Direction.FROM)]
+        public List<Person> FOLLOWS { get; } = new();
+
+        [CypherRelationship("DIRECTED", Direction.FROM)]
+        public List<Movie> DIRECTED { get; } = new();
+    }
+
+    [CypherLabel("Movie")]
+    public record Movie(string? tagline, string title, long released) : ICypherNode
+    {
+        public long Id { get; set; }
+
+        [CypherRelationship("ACTED_IN", Direction.TO)]
+        public List<(ACTED_IN, Person)> ACTED_IN { get; } = new();
+
+        [CypherRelationship("REVIEWED", Direction.TO)]
+        public List<(REVIEWED, Person)> REVIEWED { get; } = new();
+
+        [CypherRelationship("PRODUCED", Direction.TO)]
+        public List<Person> PRODUCED { get; } = new();
+
+        [CypherRelationship("WROTE", Direction.TO)]
+        public List<Person> WROTE { get; } = new();
+
+        [CypherRelationship("DIRECTED", Direction.TO)]
+        public List<Person> DIRECTED { get; } = new();
+    }
+
+    public record PersonToMovieRelationships
+    {
+        public record struct ACTED_IN(List<string> roles) : ICypherNode
+        {
+            public long Id { get; set; } = -1;
+        }
+
+        public record struct REVIEWED() : ICypherNode
+        {
+            public long Id { get; set; } = -1;
+        }
+
+        public record struct PRODUCED() : ICypherNode
+        {
+            public long Id { get; set; } = -1;
+        }
+
+        public record struct WROTE() : ICypherNode
+        {
+            public long Id { get; set; } = -1;
+        }
+
+        public record struct DIRECTED() : ICypherNode
+        {
+            public long Id { get; set; } = -1;
+        }
+    }
+
+    public record PersonToPersonRelationships
+    {
+        public record struct FOLLOWS() : ICypherNode
+        {
+            public long Id { get; set; } = -1;
+        }
     }
 }
 

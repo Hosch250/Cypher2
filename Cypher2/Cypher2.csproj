@@ -8,13 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ClassLibrary1\ClassLibrary1.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\ClassLibrary1\ClassLibrary1.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
-	<PackageReference Include="Neo4j.Driver" Version="4.4.0" />
+	<PackageReference Include="Neo4jClient" Version="4.1.20" />
   </ItemGroup>
 
 </Project>

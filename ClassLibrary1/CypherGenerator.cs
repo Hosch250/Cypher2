@@ -16,14 +16,14 @@ namespace ClassLibrary1
         private const string CypherAttribute = @"// Auto-generated code
 namespace CypherGenerator;
 
-public class CypherAttribute : System.Attribute
-{
-    public string Statement { get; }
-    public CypherAttribute(string statement)
-    {
-        Statement = statement;
-    }
-}
+//public class CypherAttribute : System.Attribute
+//{
+//    public string Statement { get; }
+//    public CypherAttribute(string statement)
+//    {
+//        Statement = statement;
+//    }
+//}
 
 public class CypherLabelAttribute : System.Attribute
 {
@@ -31,6 +31,19 @@ public class CypherLabelAttribute : System.Attribute
     public CypherLabelAttribute(string label)
     {
         Label = label;
+    }
+}
+
+public enum Direction { FROM, TO }
+
+public class CypherRelationshipAttribute : System.Attribute
+{
+    public string Type { get; }
+    public Direction Direction { get; }
+    public CypherLabelAttribute(string type, Direction direction)
+    {
+        Label = label;
+        Direction = direction;
     }
 }";
 
