@@ -4,6 +4,7 @@
     using CypherGenerator;
     using System.Linq.Expressions;
     using static Cypher2.PersonToMovieRelationships;
+    using Newtonsoft.Json;
 
     public partial class Program
     {
@@ -21,6 +22,24 @@ public record {0}({1})
 
         static async Task Main()
         {
+            var driver = new Neo4jClient.GraphClient(new Uri("http://localhost:7474"), "neo4j", "test");
+            await driver.ConnectAsync();
+            var repo = new PersonRepository(driver);
+
+            //var person = await repo.Get(288);
+            //var persons = await repo.GetWhere(n => n.born == 1995);  // todo: requires parameter name to match `match` parameter name
+            //var person = await repo.Create(new Person(1995, "Abraham Hosch"));
+            //var person = await repo.Merge(new Person(1995, "Abraham Hosch"));
+            //var person = await repo.Update(new Person(1995, "Abraham Hosch") { Id = 289 });
+            //await repo.Delete(289);
+            //await repo.DeleteWhere(n => n.born == 1995);  // todo: requires parameter name to match `match` parameter name
+            //var count = await repo.Count(n => n.born == 1995);  // todo: requires parameter name to match `match` parameter name
+            //var rel = await repo.Connect(289, 1, new PersonToPersonRelationships.FOLLOWS());
+            //var rel = await repo.Merge(289, 1, new PersonToPersonRelationships.FOLLOWS());
+
+
+            var x = 0;
+
             //var typeMap = new Dictionary<string, string>()
             //{
             //    ["Boolean"] = "bool",
@@ -106,19 +125,21 @@ public record {0}({1})
     }
     public interface IRepository<T>
     {
-        ValueTask<T?> Get<TId>(TId id);
-        ValueTask<List<T>> GetWhere(Expression<Func<T, bool>> whereFilter, int? skip, int? limit);
+        ValueTask<T?> Get(long id);
+        ValueTask<List<T>> GetWhere(Expression<Func<T, bool>> whereFilter, int? skip = null, int? limit = null);
         ValueTask<T> Create(T record);
         ValueTask<T> Merge(T record);
         ValueTask<T?> Update(T record);
-        ValueTask Delete<TId>(TId id);
+        ValueTask Delete(long id);
         ValueTask DeleteWhere(Expression<Func<T, bool>> whereFilter);
         ValueTask<long> Count(Expression<Func<T, bool>> filter);
-        ValueTask<TRelationship> Connect<TId, TRelationship>(TId fromId, TId toId, TRelationship relationshipRecord)
-            where TId : notnull
+        ValueTask<TRelationship> Connect<TRelationship>(long fromId, long toId, TRelationship relationshipRecord)
+            where TRelationship : struct, ICypherNode;
+        ValueTask<TRelationship> Merge<TRelationship>(long fromId, long toId, TRelationship relationshipRecord)
             where TRelationship : struct, ICypherNode;
     }
 
+    // todo: support user-provided id instead of using Neo4j id
     public class PersonRepository : IRepository<Person>
     {
         private readonly Neo4jClient.GraphClient driver;
@@ -128,99 +149,95 @@ public record {0}({1})
             this.driver = driver;
         }
 
-        public async ValueTask<Person?> Get<TId>(TId id)
+        public async ValueTask<Person?> Get(long id)
         {
             var query = driver.Cypher
-                .WithParams(new Dictionary<string, TId>() { ["nodeId"] = id })
+                .WithParams(new Dictionary<string, object>() { ["nodeId"] = id })
                 .Match("(n:Person)")
                 .Where("ID(n) = $nodeId")
-                .Return(n => new Person(
-                    n.Node<INode>().Data.Properties["born"].As<long?>(),
-                    n.Node<INode>().Data.Properties["name"].As<string>()) {
-                        Id = n.Id()
-                    });
+                .Return(n => new
+                {
+                    id = n.Id(),
+                    person = n.As<Person>()
+                });
 
-            return (await query.ResultsAsync).FirstOrDefault();
-
-            // todo: create Id attribute to put on property and look up by that property's name if the attribute is set
-            //       otherwise, default to ID(n) lookup
+            var response = (await query.ResultsAsync).First();
+            return response.person with { Id = response.id };
         }
 
-        public async ValueTask<List<Person>> GetWhere(Expression<Func<Person, bool>> whereFilter, int? skip, int? limit)
+        public async ValueTask<List<Person>> GetWhere(Expression<Func<Person, bool>> whereFilter, int? skip = null, int? limit = null)
         {
             var query = driver.Cypher
                 .Match("(n:Person)")
                 .Where(whereFilter)
                 .Skip(skip)
                 .Limit(limit)
-                .Return(n => new Person(
-                    n.Node<INode>().Data.Properties["born"].As<long?>(),
-                    n.Node<INode>().Data.Properties["name"].As<string>()) {
-                        Id = n.Id()
-                    });
+                .Return(n => new
+                {
+                    id = n.Id(),
+                    person = n.As<Person>()
+                });
 
-            return (await query.ResultsAsync).ToList();
+            return (await query.ResultsAsync).Select(response => response.person with { Id = response.id }).ToList();
         }
 
         public async ValueTask<Person> Create(Person record)
         {
             var query = driver.Cypher
-                .WithParams(new Dictionary<string, Person>() { ["node"] = record })
-                .Create("(n:Person { born = $node.born, name = $node.name })")
-                .Return(n => new Person(
-                    n.Node<INode>().Data.Properties["born"].As<long?>(),
-                    n.Node<INode>().Data.Properties["name"].As<string>()) {
-                        Id = n.Id()
-                    });
+                .Create("(n:Person $node)")
+                .WithParam("node", record)
+                .Return(n => new
+                {
+                    id = n.Id(),
+                    person = n.As<Person>()
+                });
 
-            return (await query.ResultsAsync).First();
+            var response = (await query.ResultsAsync).First();
+            return response.person with { Id = response.id };
         }
 
         public async ValueTask<Person> Merge(Person record)
         {
             var query = driver.Cypher
-                .WithParams(new Dictionary<string, Person>() { ["node"] = record })
-                .Merge("(n:Person { born = $node.born, name = $node.name })")
-                .Return(n => new Person(
-                    n.Node<INode>().Data.Properties["born"].As<long?>(),
-                    n.Node<INode>().Data.Properties["name"].As<string>())
+                .Merge("(n:Person $node)")
+                .WithParam("node", record)
+                .Return(n => new
                 {
-                    Id = n.Id()
+                    id = n.Id(),
+                    person = n.As<Person>()
                 });
 
-            return (await query.ResultsAsync).First();
+            var response = (await query.ResultsAsync).First();
+            return response.person with { Id = response.id };
         }
 
         public async ValueTask<Person?> Update(Person record)
         {
             var query = driver.Cypher
-                .WithParams(new Dictionary<string, Person>() { ["node"] = record })
                 .Match("(n:Person)")
-                .Where("ID(n) = $node.Id")
-                .Set("n.born = $node.Born")
-                .Set("n.name = $node.Name")
-                .Return(n => new Person(
-                    n.Node<INode>().Data.Properties["born"].As<long?>(),
-                    n.Node<INode>().Data.Properties["name"].As<string>())
+                .WithParam("node", record)
+                .WithParam("nodeId", record.Id)
+                .Where("ID(n) = $nodeId")
+                .Set("n = $node")
+                .Return(n => new
                 {
-                    Id = n.Id()
+                    id = n.Id(),
+                    person = n.As<Person>()
                 });
 
-            return (await query.ResultsAsync).FirstOrDefault();
+            var response = (await query.ResultsAsync).FirstOrDefault();
+            return response is null ? null : response.person with { Id = response.id };
         }
 
-        public async ValueTask Delete<TId>(TId id)
+        public async ValueTask Delete(long id)
         {
             var query = driver.Cypher
-                .WithParams(new Dictionary<string, TId>() { ["nodeId"] = id })
                 .Match("(n:Person)")
+                .WithParam("nodeId", id)
                 .Where("ID(n) = $nodeId")
                 .DetachDelete("n");
 
             await query.ExecuteWithoutResultsAsync();
-
-            // todo: create Id attribute to put on property and look up by that property's name if the attribute is set
-            //       otherwise, default to ID(n) lookup
         }
 
         public async ValueTask DeleteWhere(Expression<Func<Person, bool>> whereFilter)
@@ -243,57 +260,81 @@ public record {0}({1})
             return (await query.ResultsAsync).First();
         }
 
-        public async ValueTask<TRelationship> Connect<TId, TRelationship>(TId fromId, TId toId, TRelationship relationshipRecord)
-            where TId : notnull
+        public async ValueTask<TRelationship> Connect<TRelationship>(long fromId, long toId, TRelationship relationshipRecord)
             where TRelationship : struct, ICypherNode
         {
             var query = driver.Cypher
-                .WithParams(new Dictionary<string, object>()
-                    {
-                        ["fromId"] = fromId,
-                        ["toId"] = toId,
-                        ["relationship"] = relationshipRecord,
-                        ["relationshipLabel"] = typeof(TRelationship).Name
-                    })
-                .Match("(from:Person)")
+                .Match("(from)")
                 .Match("(to)")
                 .Where("ID(from) = $fromId AND ID(to) = $toId")
-                .Create("(from)-[rel:$relationshipLabel]->(to)")
-                .Return(rel => rel.Id());
+                .Create($"(from)-[rel:{typeof(TRelationship).Name} $relationship]->(to)")
+                .WithParams(new Dictionary<string, object>()
+                {
+                    ["fromId"] = fromId,
+                    ["toId"] = toId,
+                    ["relationship"] = relationshipRecord,
+                }).Return(rel => rel.Id());
 
             var id = (await query.ResultsAsync).First();
             return relationshipRecord with { Id = id };
+        }
 
-            // todo: figure out parameters for relationship node
-            // todo: figure out returning relationship node
+        // todo: merge with props as well (empty obj can't be used in merge)
+        public async ValueTask<TRelationship> Merge<TRelationship>(long fromId, long toId, TRelationship relationshipRecord)
+            where TRelationship : struct, ICypherNode
+        {
+            var query = driver.Cypher
+                .Match("(from)")
+                .Match("(to)")
+                .Where("ID(from) = $fromId AND ID(to) = $toId")
+                .Merge($"(from)-[rel:{typeof(TRelationship).Name}]->(to)")
+                .WithParams(new Dictionary<string, object>()
+                {
+                    ["fromId"] = fromId,
+                    ["toId"] = toId,
+                    ["relationship"] = relationshipRecord,
+                }).Return(rel => rel.Id());
+
+            var id = (await query.ResultsAsync).First();
+            return relationshipRecord with { Id = id };
         }
     }
 
     public interface ICypherNode
     {
+        [JsonIgnore]
         public long Id { get; set; }
     }
 
     [CypherLabel("Person")]
     public record Person(long? born, string name) : ICypherNode
     {
+        public Person() : this(null, "") { }
+
+        [JsonIgnore]
         public long Id { get; set; }
 
+        [JsonIgnore]
         [CypherRelationship("ACTED_IN", Direction.FROM)]
         public List<(ACTED_IN, Movie)> ACTED_IN { get; } = new();
 
+        [JsonIgnore]
         [CypherRelationship("REVIEWED", Direction.FROM)]
         public List<(REVIEWED, Movie)> REVIEWED { get; } = new();
 
+        [JsonIgnore]
         [CypherRelationship("PRODUCED", Direction.FROM)]
         public List<Movie> PRODUCED { get; } = new();
 
+        [JsonIgnore]
         [CypherRelationship("WROTE", Direction.FROM)]
         public List<Movie> WROTE { get; } = new();
 
+        [JsonIgnore]
         [CypherRelationship("FOLLOWS", Direction.FROM)]
         public List<Person> FOLLOWS { get; } = new();
 
+        [JsonIgnore]
         [CypherRelationship("DIRECTED", Direction.FROM)]
         public List<Movie> DIRECTED { get; } = new();
     }
@@ -301,20 +342,28 @@ public record {0}({1})
     [CypherLabel("Movie")]
     public record Movie(string? tagline, string title, long released) : ICypherNode
     {
+        public Movie() : this(null, "", 0) { }
+
+        [JsonIgnore]
         public long Id { get; set; }
 
+        [JsonIgnore]
         [CypherRelationship("ACTED_IN", Direction.TO)]
         public List<(ACTED_IN, Person)> ACTED_IN { get; } = new();
 
+        [JsonIgnore]
         [CypherRelationship("REVIEWED", Direction.TO)]
         public List<(REVIEWED, Person)> REVIEWED { get; } = new();
 
+        [JsonIgnore]
         [CypherRelationship("PRODUCED", Direction.TO)]
         public List<Person> PRODUCED { get; } = new();
 
+        [JsonIgnore]
         [CypherRelationship("WROTE", Direction.TO)]
         public List<Person> WROTE { get; } = new();
 
+        [JsonIgnore]
         [CypherRelationship("DIRECTED", Direction.TO)]
         public List<Person> DIRECTED { get; } = new();
     }
@@ -323,26 +372,31 @@ public record {0}({1})
     {
         public record struct ACTED_IN(List<string> roles) : ICypherNode
         {
+            [JsonIgnore]
             public long Id { get; set; } = -1;
         }
 
         public record struct REVIEWED() : ICypherNode
         {
+            [JsonIgnore]
             public long Id { get; set; } = -1;
         }
 
         public record struct PRODUCED() : ICypherNode
         {
+            [JsonIgnore]
             public long Id { get; set; } = -1;
         }
 
         public record struct WROTE() : ICypherNode
         {
+            [JsonIgnore]
             public long Id { get; set; } = -1;
         }
 
         public record struct DIRECTED() : ICypherNode
         {
+            [JsonIgnore]
             public long Id { get; set; } = -1;
         }
     }
@@ -351,6 +405,7 @@ public record {0}({1})
     {
         public record struct FOLLOWS() : ICypherNode
         {
+            [JsonIgnore]
             public long Id { get; set; } = -1;
         }
     }

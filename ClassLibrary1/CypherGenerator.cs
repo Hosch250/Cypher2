@@ -40,9 +40,9 @@ public class CypherRelationshipAttribute : System.Attribute
 {
     public string Type { get; }
     public Direction Direction { get; }
-    public CypherLabelAttribute(string type, Direction direction)
+    public CypherRelationshipAttribute(string type, Direction direction)
     {
-        Label = label;
+        Type = type;
         Direction = direction;
     }
 }";
