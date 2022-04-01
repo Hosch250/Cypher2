@@ -27,13 +27,13 @@ public record {0}({1})
             var repo = new PersonRepository(driver);
 
             //var person = await repo.Get(288);
-            //var persons = await repo.GetWhere(n => n.born == 1995);  // todo: requires parameter name to match `match` parameter name
+            //var persons = await repo.GetWhere(n => n.born == 1995);
             //var person = await repo.Create(new Person(1995, "Abraham Hosch"));
             //var person = await repo.Merge(new Person(1995, "Abraham Hosch"));
             //var person = await repo.Update(new Person(1995, "Abraham Hosch") { Id = 289 });
             //await repo.Delete(289);
-            //await repo.DeleteWhere(n => n.born == 1995);  // todo: requires parameter name to match `match` parameter name
-            //var count = await repo.Count(n => n.born == 1995);  // todo: requires parameter name to match `match` parameter name
+            //await repo.DeleteWhere(n => n.born == 1995);
+            //var count = await repo.Count(x => x.born == 1995);
             //var rel = await repo.Connect(289, 1, new PersonToPersonRelationships.FOLLOWS());
             //var rel = await repo.Merge(289, 1, new PersonToPersonRelationships.FOLLOWS());
 
@@ -125,18 +125,26 @@ public record {0}({1})
     }
     public interface IRepository<T>
     {
-        ValueTask<T?> Get(long id);
-        ValueTask<List<T>> GetWhere(Expression<Func<T, bool>> whereFilter, int? skip = null, int? limit = null);
+        ValueTask<T?> Get<TId>(TId id) where TId : notnull;
+        ValueTask<List<T>> GetWhere(Expression<Func<T, bool>> filter, int? skip = null, int? limit = null);
         ValueTask<T> Create(T record);
         ValueTask<T> Merge(T record);
         ValueTask<T?> Update(T record);
-        ValueTask Delete(long id);
-        ValueTask DeleteWhere(Expression<Func<T, bool>> whereFilter);
+        ValueTask Delete<TId>(TId id) where TId : notnull;
+        ValueTask DeleteWhere(Expression<Func<T, bool>> filter);
         ValueTask<long> Count(Expression<Func<T, bool>> filter);
-        ValueTask<TRelationship> Connect<TRelationship>(long fromId, long toId, TRelationship relationshipRecord)
+        ValueTask<TRelationship> Connect<TId, TRelationship>(TId fromId, TId toId, TRelationship relationshipRecord)
+            where TId : notnull
             where TRelationship : struct, ICypherNode;
-        ValueTask<TRelationship> Merge<TRelationship>(long fromId, long toId, TRelationship relationshipRecord)
+        ValueTask<TRelationship> Merge<TId, TRelationship>(TId fromId, TId toId, TRelationship relationshipRecord)
+             where TId : notnull
             where TRelationship : struct, ICypherNode;
+
+        internal record QueryResult
+        {
+            public long Id { get; init; }
+            public T Result { get; init; }
+        };
     }
 
     // todo: support user-provided id instead of using Neo4j id
@@ -149,7 +157,8 @@ public record {0}({1})
             this.driver = driver;
         }
 
-        public async ValueTask<Person?> Get(long id)
+        public async ValueTask<Person?> Get<TId>(TId id)
+            where TId : notnull
         {
             var query = driver.Cypher
                 .WithParams(new Dictionary<string, object>() { ["nodeId"] = id })
@@ -165,20 +174,33 @@ public record {0}({1})
             return response.person with { Id = response.id };
         }
 
-        public async ValueTask<List<Person>> GetWhere(Expression<Func<Person, bool>> whereFilter, int? skip = null, int? limit = null)
+        public async ValueTask<List<Person>> GetWhere(Expression<Func<Person, bool>> filter, int? skip = null, int? limit = null)
         {
+            var argName = filter.GetArgName() ?? "n";
+
+            var returnExpr = Expression.Lambda<Func<Neo4jClient.Cypher.ICypherResultItem, IRepository<Person>.QueryResult>>(
+                Expression.MemberInit(
+                    Expression.New(typeof(IRepository<Person>.QueryResult)),
+                    Expression.Bind(
+                        typeof(IRepository<Person>.QueryResult).GetProperty("Id")!,
+                        Expression.Call(
+                            Expression.Parameter(typeof(Neo4jClient.Cypher.ICypherResultItem), argName),
+                            typeof(Neo4jClient.Cypher.ICypherResultItem).GetMethod("Id")!)),
+                        Expression.Bind(
+                            typeof(IRepository<Person>.QueryResult).GetProperty("Result")!,
+                            Expression.Call(
+                                Expression.Parameter(typeof(Neo4jClient.Cypher.ICypherResultItem), argName),
+                                "As", new Type[1] { typeof(Person) }))),
+                Expression.Parameter(typeof(Neo4jClient.Cypher.ICypherResultItem), argName));
+
             var query = driver.Cypher
-                .Match("(n:Person)")
-                .Where(whereFilter)
+                .Match($"({argName}:Person)")
+                .Where(filter)
                 .Skip(skip)
                 .Limit(limit)
-                .Return(n => new
-                {
-                    id = n.Id(),
-                    person = n.As<Person>()
-                });
+                .Return(returnExpr);
 
-            return (await query.ResultsAsync).Select(response => response.person with { Id = response.id }).ToList();
+            return (await query.ResultsAsync).Select(response => response.Result with { Id = response.Id }).ToList();
         }
 
         public async ValueTask<Person> Create(Person record)
@@ -229,7 +251,8 @@ public record {0}({1})
             return response is null ? null : response.person with { Id = response.id };
         }
 
-        public async ValueTask Delete(long id)
+        public async ValueTask Delete<TId>(TId id)
+            where TId : notnull
         {
             var query = driver.Cypher
                 .Match("(n:Person)")
@@ -240,27 +263,38 @@ public record {0}({1})
             await query.ExecuteWithoutResultsAsync();
         }
 
-        public async ValueTask DeleteWhere(Expression<Func<Person, bool>> whereFilter)
+        public async ValueTask DeleteWhere(Expression<Func<Person, bool>> filter)
         {
+            var argName = filter.GetArgName() ?? "n";
+
             var query = driver.Cypher
-                .Match("(n:Person)")
-                .Where(whereFilter)
-                .DetachDelete("n");
+                .Match($"({argName}:Person)")
+                .Where(filter)
+                .DetachDelete(argName);
 
             await query.ExecuteWithoutResultsAsync();
         }
 
         public async ValueTask<long> Count(Expression<Func<Person, bool>> filter)
         {
+            var argName = filter.GetArgName() ?? "n";
+
+            var returnExpr = Expression.Lambda<Func<Neo4jClient.Cypher.ICypherResultItem, long>>(
+                Expression.Call(
+                    Expression.Parameter(typeof(Neo4jClient.Cypher.ICypherResultItem), argName),
+                    typeof(Neo4jClient.Cypher.ICypherResultItem).GetMethod("Count")!),
+                Expression.Parameter(typeof(Neo4jClient.Cypher.ICypherResultItem), argName));
+
             var query = driver.Cypher
-                .Match("(n:Person)")
+                .Match($"({argName}:Person)")
                 .Where(filter)
-                .Return(n => n.Count());
+                .Return(returnExpr);
 
             return (await query.ResultsAsync).First();
         }
 
-        public async ValueTask<TRelationship> Connect<TRelationship>(long fromId, long toId, TRelationship relationshipRecord)
+        public async ValueTask<TRelationship> Connect<TId, TRelationship>(TId fromId, TId toId, TRelationship relationshipRecord)
+            where TId : notnull
             where TRelationship : struct, ICypherNode
         {
             var query = driver.Cypher
@@ -280,7 +314,8 @@ public record {0}({1})
         }
 
         // todo: merge with props as well (empty obj can't be used in merge)
-        public async ValueTask<TRelationship> Merge<TRelationship>(long fromId, long toId, TRelationship relationshipRecord)
+        public async ValueTask<TRelationship> Merge<TId, TRelationship>(TId fromId, TId toId, TRelationship relationshipRecord)
+            where TId : notnull
             where TRelationship : struct, ICypherNode
         {
             var query = driver.Cypher
@@ -297,6 +332,14 @@ public record {0}({1})
 
             var id = (await query.ResultsAsync).First();
             return relationshipRecord with { Id = id };
+        }
+    }
+
+    public static class Extensions
+    {
+        public static string? GetArgName<T>(this Expression<Func<T, bool>> expression)
+        {
+            return expression.Parameters[0].Name;
         }
     }
 
